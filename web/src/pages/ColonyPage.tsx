@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { cn } from "@/lib/utils";
 import { PluginSlot } from "@/plugins";
-import { Users, Zap, GitBranch, Activity, Settings, Play, Pause, RotateCw, Download, Eye, Edit, Loader2, Network, Terminal, Layers, Globe, BookOpen, Shield, Plus, FileText, Package } from "lucide-react";
+import { Users, Zap, GitBranch, Activity, Settings, Play, Pause, RotateCw, Download, Eye, Edit, Loader2, Network, Terminal, Layers, Globe, BookOpen, Shield, Plus, FileText, Package, X, TrendingUp, History, Code } from "lucide-react";
 
 // DollarSign icon (not in lucide, create inline)
 function DollarSign({ className }: { className?: string }) {
@@ -25,6 +25,7 @@ export default function ColonyPage() {
     costUsd: 0,
     uptime: 0,
   });
+  const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
 
   useLayoutEffect(() => {
     setEnd(
@@ -153,7 +154,7 @@ export default function ColonyPage() {
       <div className="flex-1 min-h-0 overflow-hidden p-4">
         {activeTab === "overview" && <OverviewTab />}
         {activeTab === "kanban" && <KanbanTab />}
-        {activeTab === "slots" && <SlotsTab />}
+        {activeTab === "slots" && <SlotsTab setSelectedSlot={setSelectedSlot} />}
         {activeTab === "replays" && <ReplaysTab />}
         {activeTab === "skills" && <SkillsTab />}
         {activeTab === "planning" && <PlanningTab />}
@@ -162,6 +163,7 @@ export default function ColonyPage() {
       </div>
 
       <PluginSlot name="colony:bottom" />
+      <SlotDrawer slot={selectedSlot} isOpen={!!selectedSlot} onClose={() => setSelectedSlot(null)} />
     </div>
   );
 }
@@ -523,7 +525,7 @@ function KanbanCard({ task }: { task: any }) {
 }
 
 // Slots Tab
-function SlotsTab() {
+function SlotsTab({ setSelectedSlot }: { setSelectedSlot: (slot: any) => void }) {
   const slotData = [
     { name: "orchestrator", role: "Plans, delegates, monitors", status: "active", budget: "$0.00 / ∞", tokens: "12.4k", skills: 4, governance: true },
     { name: "builder", role: "Writes, tests, deploys code", status: "active", budget: "$8.50 / $10.00", tokens: "45.2k", skills: 8, governance: true },
@@ -538,20 +540,23 @@ function SlotsTab() {
   return (
     <div className="h-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-2">
       {slotData.map((slot) => (
-        <SlotCard key={slot.name} slot={slot} />
+        <SlotCard key={slot.name} slot={slot} onClick={() => setSelectedSlot(slot)} />
       ))}
     </div>
   );
 }
 
-function SlotCard({ slot }: { slot: any }) {
+function SlotCard({ slot, onClick }: { slot: any; onClick: () => void }) {
   const budgetParts = slot.budget.split(" / ");
   const spent = parseFloat(budgetParts[0].replace("$", ""));
   const limit = budgetParts[1] === "∞" ? 100 : parseFloat(budgetParts[1].replace("$", ""));
   const pct = limit === 100 ? 0 : Math.min(100, (spent / limit) * 100);
 
   return (
-    <div className="p-4 rounded-xl bg-base bg-elevated/50 border border-current/10 hover:border-current/20 transition-colors flex flex-col">
+    <div
+      className="p-4 rounded-xl bg-base bg-elevated/50 border border-current/10 hover:border-current/20 transition-colors flex flex-col cursor-pointer"
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="font-semibold text-midground capitalize">{slot.name}</h3>
@@ -843,4 +848,298 @@ function formatNumber(num: number): string {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
   if (num >= 1000) return (num / 1000).toFixed(1) + "k";
   return num.toString();
+}
+
+// Slot Detail Drawer Component
+interface SlotDrawerProps {
+  slot: any;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function SlotDrawer({ slot, isOpen, onClose }: SlotDrawerProps) {
+  if (!isOpen || !slot) return null;
+
+  const budgetParts = slot.budget.split(" / ");
+  const spent = parseFloat(budgetParts[0].replace("$", ""));
+  const limit = budgetParts[1] === "∞" ? null : parseFloat(budgetParts[1].replace("$", ""));
+  const pct = limit ? Math.min(100, (spent / limit) * 100) : 0;
+
+  // Mock data for the drawer
+  const tokenHistory = Array.from({ length: 60 }, (_, i) => ({
+    time: i,
+    tokens: Math.floor(Math.random() * 500) + (slot.name === "builder" ? 800 : 100),
+  }));
+
+  const governanceEvents = [
+    { time: "2m ago", action: "write_file", path: "src/auth.tsx", decision: "allow", rule: "file_write:workspace" },
+    { time: "5m ago", action: "terminal", cmd: "npm test", decision: "allow", rule: "shell_exec:project" },
+    { time: "12m ago", action: "deploy", target: "cloudflare:staging", decision: "approval_required", rule: "deploy:*" },
+    { time: "1h ago", action: "git_push", remote: "origin", branch: "main", decision: "deny", rule: "git:push:production" },
+    { time: "3h ago", action: "web_search", query: "Supabase auth", decision: "allow", rule: "network:http" },
+  ];
+
+  const logs = [
+    { time: "10:42:15", level: "info", msg: "Task assigned: Implement login form" },
+    { time: "10:42:18", level: "info", msg: "Spawning subagent via delegate_task" },
+    { time: "10:42:22", level: "debug", msg: "SecurityBus evaluation: allow (file_write:workspace)" },
+    { time: "10:42:25", level: "info", msg: "Writing auth.tsx (2.3 KB)" },
+    { time: "10:42:27", level: "info", msg: "Running tests... (npm test)" },
+    { time: "10:42:45", level: "warn", msg: "Test suite slow: 3.2s > 2s threshold" },
+    { time: "10:42:48", level: "info", msg: "All 47 tests passed" },
+    { time: "10:42:50", level: "info", msg: "Token burn: 1,247 (session: 45.2k)" },
+  ];
+
+  const skills = [
+    { name: "terminal", category: "core", enabled: true },
+    { name: "write_file", category: "core", enabled: true },
+    { name: "patch", category: "core", enabled: true },
+    { name: "github", category: "development", enabled: true },
+    { name: "test-driven-development", category: "development", enabled: true },
+    { name: "requesting-code-review", category: "development", enabled: true },
+    { name: "cloudflare-temporary-deploy", category: "devops", enabled: true },
+    { name: "docker-management", category: "devops", enabled: slot.name === "devops" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:justify-end">
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className="relative w-full sm:w-[480px] lg:w-[520px] max-h-[90vh] bg-base border-l border-current/10 shadow-2xl flex flex-col animate-slide-in"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="slot-drawer-title"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-4 border-b border-current/10">
+          <div>
+            <h2 id="slot-drawer-title" className="font-semibold text-midground capitalize">{slot.name}</h2>
+            <p className="text-xs text-text-secondary mt-0.5">{slot.role}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-text-secondary hover:text-midground hover:bg-current/10 transition-colors"
+            aria-label="Close slot details"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {/* Status & Budget */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  "w-3 h-3 rounded-full",
+                  slot.status === "active" && "bg-success animate-pulse",
+                  slot.status === "idle" && "bg-muted"
+                )}
+              />
+              <span className="text-sm font-medium capitalize">{slot.status}</span>
+              <span className="ml-auto px-2 py-0.5 text-xs font-medium rounded-full bg-current/10 text-text-secondary">
+                {slot.governance ? "Governance: ON" : "Governance: OFF"}
+              </span>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-text-secondary">Budget</span>
+                <span className="font-medium text-text-primary">{slot.budget}</span>
+              </div>
+              <div className="h-2 rounded-full bg-current/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${pct}%`,
+                    background: pct > 80 ? "#ef4444" : pct > 50 ? "#f59e0b" : "#00b4d8",
+                  }}
+                />
+              </div>
+              {limit && (
+                <p className="text-xs text-text-secondary mt-1">
+                  {pct.toFixed(1)}% used • ${(limit - spent).toFixed(2)} remaining
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <MetricMini label="Tokens" value={slot.tokens} icon={Zap} color="#00b4d8" />
+              <MetricMini label="Skills" value={slot.skills} icon={Package} color="#8b5cf6" />
+              <MetricMini label="Uptime" value="2h 34m" icon={History} color="#10a37f" />
+            </div>
+          </section>
+
+          {/* Token Velocity Sparkline */}
+          <section>
+            <h3 className="font-medium text-text-primary mb-3 flex items-center gap-2">
+              <TrendingUp className="size-4 text-midground" />
+              Token Velocity (last 60s)
+            </h3>
+            <div className="h-32 bg-current/5 rounded-lg relative">
+              <svg className="w-full h-full" viewBox="0 0 600 120" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="velocityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#00b4d8" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="#00b4d8" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d={tokenHistory.map((p, i) => `${i === 0 ? "M" : "L"}${i * 10} ${120 - (p.tokens / 1500) * 100}`).join(" ")}
+                  stroke="#00b4d8"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d={tokenHistory.map((p, i) => `${i === 0 ? "M" : "L"}${i * 10} ${120 - (p.tokens / 1500) * 100}`).join(" ") + " L600 120 L0 120 Z"}
+                  fill="url(#velocityGradient)"
+                />
+              </svg>
+              <div className="absolute bottom-2 right-2 text-xs text-text-secondary">
+                Peak: {Math.max(...tokenHistory.map((p) => p.tokens))} tok/s
+              </div>
+            </div>
+          </section>
+
+          {/* Governance History */}
+          <section>
+            <h3 className="font-medium text-text-primary mb-3 flex items-center gap-2">
+              <Shield className="size-4 text-midground" />
+              Governance Decisions (last 20)
+            </h3>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {governanceEvents.map((event, i) => (
+                <GovernanceEventRow key={i} event={event} />
+              ))}
+            </div>
+          </section>
+
+          {/* Live Logs */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium text-text-primary flex items-center gap-2">
+                <Terminal className="size-4 text-midground" />
+                Live Logs
+              </h3>
+              <span className="text-xs text-text-secondary">Auto-scroll</span>
+            </div>
+            <div className="h-48 bg-[#0D0F14] rounded-lg font-mono text-xs overflow-y-auto p-3 space-y-1">
+              {logs.map((log, i) => (
+                <LogEntry key={i} log={log} />
+              ))}
+            </div>
+          </section>
+
+          {/* Skills */}
+          <section>
+            <h3 className="font-medium text-text-primary mb-3 flex items-center gap-2">
+              <Code className="size-4 text-midground" />
+              Skills ({skills.filter((s) => s.enabled).length}/{skills.length})
+            </h3>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {skills.map((skill) => (
+                <SkillToggleRow key={skill.name} skill={skill} />
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-current/10 flex gap-2">
+          <button className="flex-1 py-2 text-sm font-medium rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors">
+            Configure
+          </button>
+          <button className="flex-1 py-2 text-sm font-medium rounded-lg bg-current/10 text-text-secondary hover:bg-current/20 transition-colors">
+            Run Task
+          </button>
+          <button className="flex-1 py-2 text-sm font-medium rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors">
+            Pause
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricMini({ label, value, icon: Icon, color }: { label: string; value: string; icon: React.ComponentType<any>; color: string }) {
+  return (
+    <div className="p-3 rounded-lg bg-current/5 text-center">
+      <div className="p-2 rounded-lg bg-current/10 mx-auto mb-2" style={{ width: 32, height: 32 }}>
+        <Icon className="size-5" style={{ color }} />
+      </div>
+      <p className="font-mono text-sm text-text-primary">{value}</p>
+      <p className="text-xs text-text-secondary">{label}</p>
+    </div>
+  );
+}
+
+function GovernanceEventRow({ event }: { event: any }) {
+  const decisionColors = {
+    allow: "#00b4d8",
+    deny: "#ef4444",
+    approval_required: "#f59e0b",
+    conditional: "#8b5cf6",
+  };
+
+  const decisionLabels = {
+    allow: "Allowed",
+    deny: "Denied",
+    approval_required: "Approval Required",
+    conditional: "Conditional",
+  };
+
+  return (
+    <div className="p-3 rounded-lg bg-current/5 border border-current/10">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="font-mono text-xs text-text-primary">{event.action}</span>
+        <span className="text-xs text-text-secondary">{event.time}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-text-secondary/60">{event.path || event.cmd || event.target || event.query || event.remote}</span>
+        <span className="ml-auto px-2 py-0.5 rounded" style={{ background: `${decisionColors[event.decision as keyof typeof decisionColors]}20`, color: decisionColors[event.decision as keyof typeof decisionColors] }}>
+          {decisionLabels[event.decision as keyof typeof decisionLabels]}
+        </span>
+      </div>
+      <p className="text-[10px] text-text-secondary/60 mt-1">Rule: {event.rule}</p>
+    </div>
+  );
+}
+
+function LogEntry({ log }: { log: any }) {
+  const levelColors = {
+    info: "#00b4d8",
+    warn: "#f59e0b",
+    error: "#ef4444",
+    debug: "#71717a",
+  };
+
+  return (
+    <div className="flex items-start gap-2 text-text-secondary" style={{ color: levelColors[log.level as keyof typeof levelColors] || "#71717a" }}>
+      <span className="font-mono text-[10px] w-20 shrink-0">{log.time}</span>
+      <span className="text-[10px] w-12 shrink-0 uppercase">{log.level}</span>
+      <span className="text-[11px] flex-1 truncate">{log.msg}</span>
+    </div>
+  );
+}
+
+function SkillToggleRow({ skill }: { skill: any }) {
+  return (
+    <div className="flex items-center justify-between p-2 rounded-lg bg-current/5 hover:bg-current/10 transition-colors">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-text-primary capitalize">{skill.name.replace(/-/g, " ")}</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-current/10 text-text-secondary">{skill.category}</span>
+      </div>
+      <label className="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" defaultChecked={skill.enabled} className="sr-only peer" />
+        <div className="w-10 h-5 bg-current/20 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-midground rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-color-white peer-checked:bg-midground after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all" />
+      </label>
+    </div>
+  );
 }
