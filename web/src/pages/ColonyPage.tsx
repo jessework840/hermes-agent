@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { usePageHeader } from "@/contexts/usePageHeader";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PluginSlot } from "@/plugins";
-import { Users, Zap, GitBranch, Activity, Settings, Play, Pause, RotateCw, Download, Eye, Edit, Loader2, Network, Terminal, Layers, Globe, BookOpen, Shield, Plus, FileText, Package, X, TrendingUp, History, Code } from "lucide-react";
+import { Users, Zap, GitBranch, Activity, Settings, RotateCw, Download, Eye, Edit, Network, Terminal, Layers, Globe, BookOpen, Shield, Plus, FileText, Package, X, TrendingUp, History, Code, Waves, Cpu, HardDrive, BarChart3 } from "lucide-react";
 
 // DollarSign icon (not in lucide, create inline)
 function DollarSign({ className }: { className?: string }) {
@@ -15,9 +14,10 @@ function DollarSign({ className }: { className?: string }) {
 }
 
 export default function ColonyPage() {
-  const { setEnd } = usePageHeader();
-  const [activeTab, setActiveTab] = useState<"overview" | "kanban" | "slots" | "replays" | "skills" | "settings" | "planning" | "agent-web">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "kanban" | "slots" | "replays" | "skills" | "settings" | "planning" | "agent-web" | "resources">("overview");
   const [colonyStatus, setColonyStatus] = useState<"running" | "stopped" | "starting" | "error">("stopped");
+  const [agentMetrics, setAgentMetrics] = useState<Record<string, any>>({});
+  const [systemMetrics, setSystemMetrics] = useState({ memory: 0, cpu: 0 });
   const [metrics] = useState({
     totalAgents: 0,
     activeTasks: 0,
@@ -27,49 +27,50 @@ export default function ColonyPage() {
   });
   const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
 
-  useLayoutEffect(() => {
-    setEnd(
-      <div className="flex items-center gap-2">
-        <button
-          className={cn(
-            "px-3 py-1.5 rounded text-sm font-medium transition-colors",
-            colonyStatus === "running"
-              ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
-              : "bg-success/20 text-success hover:bg-success/30"
-          )}
-          onClick={toggleColony}
-          disabled={colonyStatus === "starting"}
-        >
-          {colonyStatus === "running" ? (
-            <>
-              <Pause className="size-3.5 mr-1" />
-              Stop Colony
-            </>
-          ) : colonyStatus === "starting" ? (
-            <>
-              <Loader2 className="size-3.5 mr-1 animate-spin" />
-              Starting...
-            </>
-          ) : (
-            <>
-              <Play className="size-3.5 mr-1" />
-              Start Colony
-            </>
-          )}
-        </button>
-      </div>
-    );
-    return () => setEnd(null);
-  }, [setEnd, colonyStatus]);
+  // WebSocket connection effect
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimer: NodeJS.Timeout;
 
-  const toggleColony = async () => {
-    if (colonyStatus === "running") {
-      setColonyStatus("stopped");
-    } else {
-      setColonyStatus("starting");
-      setTimeout(() => setColonyStatus("running"), 1500);
-    }
-  };
+    const connect = () => {
+      try {
+        ws = new WebSocket("ws://127.0.0.1:8765");
+        ws.onopen = () => {
+          console.log("Colony WebSocket connected");
+        };
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "snapshot") {
+              setAgentMetrics(data.agents || {});
+              setSystemMetrics(data.system || { memory_usage: 0, cpu_usage: 0 });
+              if (data.colony_status) {
+                setColonyStatus(data.colony_status);
+              }
+            }
+          } catch (e) {
+            console.error("WS message parse error:", e);
+          }
+        };
+        ws.onclose = () => {
+          console.log("Colony WebSocket disconnected, reconnecting...");
+          reconnectTimer = setTimeout(connect, 3000);
+        };
+        ws.onerror = (err) => {
+          console.error("Colony WebSocket error:", err);
+        };
+      } catch (e) {
+        console.error("WebSocket connection failed:", e);
+      }
+    };
+
+    connect();
+
+    return () => {
+      if (ws) ws.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, []);
 
   const tabs = [
     { id: "overview", label: "Mission Control", icon: Activity },
@@ -79,6 +80,7 @@ export default function ColonyPage() {
     { id: "skills", label: "Skills", icon: Package },
     { id: "planning", label: "Planning", icon: BookOpen },
     { id: "agent-web", label: "Agent Web", icon: Globe },
+    { id: "resources", label: "Resources", icon: Waves },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -159,6 +161,7 @@ export default function ColonyPage() {
         {activeTab === "skills" && <SkillsTab />}
         {activeTab === "planning" && <PlanningTab />}
         {activeTab === "agent-web" && <AgentWebTab />}
+        {activeTab === "resources" && <ResourcesTab systemMetrics={systemMetrics} agentMetrics={agentMetrics} />}
         {activeTab === "settings" && <ColonySettingsTab />}
       </div>
 
@@ -742,6 +745,131 @@ function SkillCard({ skill }: { skill: any }) {
           {skill.installed ? "Remove" : "Add to Slot"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Resources Tab
+function ResourcesTab({ systemMetrics, agentMetrics }: { systemMetrics: { memory: number; cpu: number }; agentMetrics: Record<string, any> }) {
+  return (
+    <div className="h-full overflow-y-auto space-y-6 p-2">
+      {/* System Overview */}
+      <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6">
+        <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+          <Waves className="size-5" />
+          System Resources
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <ResourceCard
+            label="Memory Usage"
+            value={`${(systemMetrics.memory * 100).toFixed(1)}%`}
+            icon={HardDrive}
+            color="#00b4d8"
+            trend={systemMetrics.memory > 0.8 ? "warning" : "normal"}
+          />
+          <ResourceCard
+            label="CPU Usage"
+            value={`${(systemMetrics.cpu * 100).toFixed(1)}%`}
+            icon={Cpu}
+            color="#f59e0b"
+            trend={systemMetrics.cpu > 0.9 ? "warning" : "normal"}
+          />
+        </div>
+      </section>
+
+      {/* Per-Agent Resources */}
+      <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6">
+        <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+          <Activity className="size-5" />
+          Per-Agent Resources
+        </h3>
+        <div className="space-y-3">
+          {Object.entries(agentMetrics).length === 0 ? (
+            <div className="text-center p-8 text-text-secondary">
+              <Cpu className="size-12 mx-auto mb-4 opacity-50" />
+              <p>No agent metrics available. Start the colony daemon and connect WebSocket.</p>
+              <p className="text-xs mt-2">WebSocket: ws://127.0.0.1:8765</p>
+            </div>
+          ) : (
+            Object.entries(agentMetrics).map(([name, metrics]) => (
+              <AgentResourceCard key={name} name={name} metrics={metrics} />
+            ))
+          )}
+        </div>
+      </section>
+
+      {/* Resource History (placeholder) */}
+      <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6">
+        <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+          <BarChart3 className="size-5" />
+          Resource History (24h)
+        </h3>
+        <div className="h-64 rounded-lg bg-current/5 border border-current/10 flex items-center justify-center">
+          <p className="text-text-secondary">Time-series charts coming in Phase 9.2.3</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ResourceCard({ label, value, icon: Icon, color, trend }: { label: string; value: string; icon: React.ComponentType<any>; color: string; trend: "normal" | "warning" }) {
+  return (
+    <div className="p-4 rounded-lg bg-current/5 border border-current/10">
+      <div className="flex items-center justify-between mb-2">
+        <div className="p-2 rounded-lg" style={{ background: `${color}20` }}>
+          <Icon className="size-5" style={{ color }} />
+        </div>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${trend === "warning" ? "bg-destructive/20 text-destructive" : "bg-success/20 text-success"}`}>
+          {trend}
+        </span>
+      </div>
+      <p className="text-2xl font-bold font-mono text-text-primary">{value}</p>
+      <p className="text-xs text-text-secondary mt-1">{label}</p>
+    </div>
+  );
+}
+
+function AgentResourceCard({ name, metrics }: { name: string; metrics: any }) {
+  const statusColors = {
+    active: "#00b4d8",
+    idle: "#71717a",
+    error: "#ef4444",
+  };
+
+  return (
+    <div className="p-4 rounded-lg border border-current/10 bg-base hover:border-current/20 transition-colors">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-medium text-text-primary capitalize">{name}</h4>
+        <div
+          className="w-2.5 h-2.5 rounded-full"
+          style={{ background: statusColors[metrics.status as keyof typeof statusColors] || "#71717a" }}
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="text-center p-2 rounded bg-current/5">
+          <p className="text-2xl font-bold font-mono text-text-primary">{metrics.memory_mb.toFixed(1)}</p>
+          <p className="text-xs text-text-secondary">MB RAM</p>
+        </div>
+        <div className="text-center p-2 rounded bg-current/5">
+          <p className="text-2xl font-bold font-mono text-text-primary">{metrics.cpu_percent.toFixed(1)}</p>
+          <p className="text-xs text-text-secondary">% CPU</p>
+        </div>
+        <div className="text-center p-2 rounded bg-current/5">
+          <p className="text-xl font-bold font-mono text-text-primary">
+            {(metrics.net_rx_bytes / 1024).toFixed(0)}↓ / {(metrics.net_tx_bytes / 1024).toFixed(0)}↑
+          </p>
+          <p className="text-xs text-text-secondary">KB Net</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-text-secondary">Tokens/sec</span>
+        <span className="font-mono text-text-primary">{metrics.tokens_per_sec.toFixed(1)}</span>
+      </div>
+      {metrics.current_task && (
+        <div className="mt-2 p-2 rounded bg-current/5 text-xs text-text-secondary">
+          Current: {metrics.current_task}
+        </div>
+      )}
     </div>
   );
 }
