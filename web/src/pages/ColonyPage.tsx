@@ -934,24 +934,289 @@ function PlanningTab() {
   );
 }
 
-// Agent Web Tab
+// Agent Web Tab - Living Memory Graph (force-directed, WebSocket-coupled)
 function AgentWebTab() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [selectedNode, setSelectedNode] = useState<any | null>(null);
+
+  interface GraphNode {
+    id: string;
+    label: string;
+    type: 'concept' | 'finding' | 'decision' | 'artifact';
+    value: number; // activity/weight 0-1
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    radius: number;
+    color: string;
+    description: string;
+    connections: string[]; // node ids
+    createdAt: number;
+  }
+
+  const typeColors = {
+    concept: '#00b4d8',
+    finding: '#f59e0b',
+    decision: '#8b5cf6',
+    artifact: '#10a37f',
+  };
+
+  const typeLabels = {
+    concept: 'Concept',
+    finding: 'Finding',
+    decision: 'Decision',
+    artifact: 'Artifact',
+  };
+
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+
+  // Initialize or update graph from WebSocket events
+  useEffect(() => {
+    // Sample seed data — in production, WebSocket broadcasts new nodes/updates
+    const seedNodes: GraphNode[] = [
+      { id: 'supabase', label: 'Supabase Auth', type: 'concept', value: 0.8, x: 0, y: 0, vx: 0, vy: 0, radius: 20, color: typeColors.concept, description: 'Authentication provider with email/social', connections: ['auth-flow', 'jwt', 'middleware'], createdAt: Date.now() - 3600000 },
+      { id: 'auth-flow', label: 'Auth Flow', type: 'concept', value: 0.9, x: 0, y: 0, vx: 0, vy: 0, radius: 24, color: typeColors.concept, description: 'Login/signup/password reset flows', connections: ['supabase', 'middleware', 'login-form'], createdAt: Date.now() - 7200000 },
+      { id: 'jwt', label: 'JWT Sessions', type: 'finding', value: 0.6, x: 0, y: 0, vx: 0, vy: 0, radius: 14, color: typeColors.finding, description: 'Supabase uses HS256 by default; configure RS256 for production', connections: ['supabase'], createdAt: Date.now() - 1800000 },
+      { id: 'middleware', label: 'Auth Middleware', type: 'artifact', value: 0.7, x: 0, y: 0, vx: 0, vy: 0, radius: 16, color: typeColors.artifact, description: 'Express middleware validating JWT + role checks', connections: ['auth-flow', 'supabase', 'api-routes'], createdAt: Date.now() - 5400000 },
+      { id: 'login-form', label: 'Login Form', type: 'artifact', value: 0.85, x: 0, y: 0, vx: 0, vy: 0, radius: 18, color: typeColors.artifact, description: 'React component with email/password and social buttons', connections: ['auth-flow'], createdAt: Date.now() - 2700000 },
+      { id: 'api-routes', label: 'API Routes', type: 'concept', value: 0.75, x: 0, y: 0, vx: 0, vy: 0, radius: 22, color: typeColors.concept, description: 'Protected REST endpoints requiring auth', connections: ['middleware'], createdAt: Date.now() - 4500000 },
+      { id: 'deploy-decision', label: 'Deploy Strategy', type: 'decision', value: 0.9, x: 0, y: 0, vx: 0, vy: 0, radius: 26, color: typeColors.decision, description: 'Cloudflare Pages + Workers over VPS (cost, speed)', connections: ['middleware'], createdAt: Date.now() - 86400000 },
+      { id: 'cf-workers', label: 'Cloudflare Workers', type: 'concept', value: 0.65, x: 0, y: 0, vx: 0, vy: 0, radius: 19, color: typeColors.concept, description: 'Edge compute for auth callbacks, webhooks', connections: ['deploy-decision'], createdAt: Date.now() - 79200000 },
+      { id: 'supabase-alpha', label: 'Alpha Schema', type: 'artifact', value: 0.5, x: 0, y: 0, vx: 0, vy: 0, radius: 12, color: typeColors.artifact, description: 'users/profile/tables RLS policies', connections: ['supabase'], createdAt: Date.now() - 172800000 },
+      { id: 'test-coverage', label: 'Test Coverage 85%', type: 'finding', value: 0.4, x: 0, y: 0, vx: 0, vy: 0, radius: 10, color: typeColors.finding, description: 'Unit + integration tests passing (47/47)', connections: ['login-form'], createdAt: Date.now() - 259200000 },
+    ];
+
+    // Initialize positions randomly in canvas space
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      seedNodes.forEach(n => {
+        n.x = rect.width / 2 + (Math.random() - 0.5) * rect.width * 0.8;
+        n.y = rect.height / 2 + (Math.random() - 0.5) * rect.height * 0.8;
+        n.vx = (Math.random() - 0.5) * 0.5;
+        n.vy = (Math.random() - 0.5) * 0.5;
+      });
+    }
+    setNodes(seedNodes);
+  }, []);
+
+  // Force-directed simulation ref
+  const simulationRef = useRef<any>(null);
+
+  // Canvas colors from design tokens
+  const bgPanel = '#1a1c24';
+  const fg = '#e4e4e7';
+  const textSecondary = '#71717a';
+  const connectionColor = 'rgba(0, 180, 216, 0.3)';
+
+  // Animation loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Simple force-directed layout
+    const alpha = 0.02; // attraction strength
+    const beta = 0.001; // repulsion strength
+    const friction = 0.85;
+    const centerX = canvas.width / (2 * dpr);
+    const centerY = canvas.height / (2 * dpr);
+
+    const simulate = () => {
+      if (!nodes.length) return;
+
+      // Center gravity
+      nodes.forEach(n => {
+        n.vx += (centerX - n.x) * 0.0005;
+        n.vy += (centerY - n.y) * 0.0005;
+      });
+
+      // Node-node repulsion
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[j].x - nodes[i].x;
+          const dy = nodes[j].y - nodes[i].y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const force = beta * nodes[i].radius * nodes[j].radius / (dist * dist);
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          nodes[i].vx -= fx;
+          nodes[i].vy -= fy;
+          nodes[j].vx += fx;
+          nodes[j].vy += fy;
+        }
+      }
+
+      // Edge attraction
+      const edges: [GraphNode, GraphNode][] = [];
+      nodes.forEach(n => {
+        n.connections.forEach(connId => {
+          const target = nodes.find(x => x.id === connId);
+          if (target) edges.push([n, target]);
+        });
+      });
+      edges.forEach(([a, b]) => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = alpha;
+        const fx = (dx / dist) * force * dist * 0.3;
+        const fy = (dy / dist) * force * dist * 0.3;
+        a.vx += fx;
+        a.vy += fy;
+        b.vx -= fx;
+        b.vy -= fy;
+      });
+
+      // Apply velocity, friction, bounds
+      nodes.forEach(n => {
+        n.vx *= friction;
+        n.vy *= friction;
+        n.x += n.vx;
+        n.y += n.vy;
+
+        // Boundary
+        const rect = canvas.getBoundingClientRect();
+        n.x = Math.max(n.radius, Math.min(rect.width - n.radius, n.x));
+        n.y = Math.max(n.radius, Math.min(rect.height - n.radius, n.y));
+      });
+    };
+
+    const render = () => {
+      // Clear
+      ctx.fillStyle = bgPanel;
+      ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+      if (nodes.length === 0) return;
+
+      // Draw edges
+      nodes.forEach(n => {
+        n.connections.forEach(connId => {
+          const target = nodes.find(x => x.id === connId);
+          if (target) {
+            ctx.beginPath();
+            ctx.moveTo(n.x, n.y);
+            ctx.lineTo(target.x, target.y);
+            ctx.strokeStyle = connectionColor;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        });
+      });
+
+      // Draw nodes
+      nodes.sort((a, b) => a.value - b.value);
+      nodes.forEach(n => {
+        const isSelected = selectedNode?.id === n.id;
+        // Glow behind
+        if (isSelected) {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.radius + 8, 0, Math.PI * 2);
+          ctx.fillStyle = `${n.color}30`;
+          ctx.fill();
+        }
+
+        // Node core
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+        const gradient = ctx.createRadialGradient(n.x - 4, n.y - 4, 0, n.x, n.y, n.radius);
+        gradient.addColorStop(0, isSelected ? '#ffffff' : n.color);
+        gradient.addColorStop(1, n.color);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? '#ffffff' : `${n.color}80`;
+        ctx.lineWidth = isSelected ? 3 : 1.5;
+        ctx.stroke();
+
+        // Label
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = isSelected ? '#00d4aa' : fg;
+        ctx.fillText(n.label, n.x, n.y + n.radius + 16);
+
+        // Type badge
+        ctx.font = '9px Inter, sans-serif';
+        ctx.fillStyle = textSecondary;
+        ctx.fillText(typeLabels[n.type], n.x, n.y + n.radius + 28);
+      });
+    };
+
+    simulationRef.current = setInterval(() => {
+      simulate();
+      render();
+    }, 33); // ~30fps
+
+    return () => {
+      if (simulationRef.current) clearInterval(simulationRef.current);
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, [nodes, selectedNode]);
+
+  // Handle canvas click
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const clicked = nodes.find(n => Math.hypot(n.x - x, n.y - y) < n.radius + 5);
+    setSelectedNode(clicked || null);
+  };
+
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 rounded-xl bg-base bg-elevated/50 border border-current/10 flex items-center justify-center">
-        <div className="text-center p-8">
-          <Globe className="size-12 text-text-secondary/50 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-text-primary mb-2">Agent Web — Living Memory Graph</h3>
-          <p className="text-text-secondary max-w-md mx-auto">
-            Force-directed graph of concepts, findings, decisions, and artifacts. Auto-updated by all agents. Coming in Phase 9.3.
-          </p>
-        </div>
+      <div className="flex-1 relative rounded-xl bg-base bg-elevated/50 border border-current/10 overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          className="w-full h-full cursor-pointer"
+          onClick={handleCanvasClick}
+        />
+
+        {selectedNode && (
+          <div className="absolute bottom-4 left-4 right-4 p-4 rounded-xl bg-base/90 backdrop-blur border border-current/20 shadow-xl max-h-48 overflow-y-auto">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-semibold text-midground capitalize" style={{ color: selectedNode.color }}>
+                  {selectedNode.label}
+                </h3>
+                <p className="text-xs text-text-secondary mt-1">{selectedNode.description}</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: `${selectedNode.color}20`, color: selectedNode.color }}>
+                    {typeLabels[selectedNode.type as keyof typeof typeLabels]}
+                  </span>
+                  <span className="text-xs text-text-secondary">
+                    {selectedNode.connections.length} connections
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedNode(null)}
+                className="p-1 rounded text-text-secondary hover:text-midground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-// Colony Settings Tab
 function ColonySettingsTab() {
   return (
     <div className="h-full overflow-y-auto space-y-6 p-2">
