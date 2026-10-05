@@ -154,7 +154,7 @@ export default function ColonyPage() {
 
       {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-hidden p-4">
-        {activeTab === "overview" && <OverviewTab />}
+        {activeTab === "overview" && <OverviewTab agentMetrics={agentMetrics} />}
         {activeTab === "kanban" && <KanbanTab />}
         {activeTab === "slots" && <SlotsTab setSelectedSlot={setSelectedSlot} />}
         {activeTab === "replays" && <ReplaysTab />}
@@ -192,8 +192,8 @@ function MetricCard({ label, value, icon: Icon, trend }: { label: string; value:
   );
 }
 
-// Overview Tab - Mission Control Canvas
-function OverviewTab() {
+// Overview Tab - Mission Control Canvas (WebSocket-driven)
+function OverviewTab({ agentMetrics }: { agentMetrics: Record<string, any> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [animationId, setAnimationId] = useState<number | null>(null);
 
@@ -231,19 +231,50 @@ function OverviewTab() {
       alpha: Math.random() * 0.5 + 0.1,
     }));
 
-    // Agent nodes (orchestrator + 8 slots)
-    const agents = [
-      { id: "orchestrator", x: rect.width / 2, y: rect.height / 2, r: 35, type: "orchestrator", label: "Orchestrator", status: "active" },
-      { id: "builder", x: rect.width / 2 - 180, y: rect.height / 2 - 120, r: 25, type: "agent", label: "Builder", status: "active" },
-      { id: "researcher", x: rect.width / 2 + 180, y: rect.height / 2 - 120, r: 25, type: "agent", label: "Researcher", status: "idle" },
-      { id: "devops", x: rect.width / 2 - 180, y: rect.height / 2 + 120, r: 25, type: "agent", label: "DevOps", status: "active" },
-      { id: "designer", x: rect.width / 2 + 180, y: rect.height / 2 + 120, r: 25, type: "agent", label: "Designer", status: "idle" },
-      { id: "data-ml", x: rect.width / 2 - 300, y: rect.height / 2, r: 25, type: "agent", label: "Data/ML", status: "idle" },
-      { id: "code-reviewer", x: rect.width / 2 + 300, y: rect.height / 2, r: 25, type: "agent", label: "Code Review", status: "idle" },
-      { id: "it-sysadmin", x: rect.width / 2, y: rect.height / 2 - 240, r: 25, type: "agent", label: "IT/SysAdmin", status: "idle" },
+    // Agent nodes from WebSocket, fallback to defaults
+    const defaultPositions: Record<string, { x: number; y: number }> = {
+      orchestrator: { x: rect.width / 2, y: rect.height / 2 },
+      builder: { x: rect.width / 2 - 180, y: rect.height / 2 - 120 },
+      researcher: { x: rect.width / 2 + 180, y: rect.height / 2 - 120 },
+      devops: { x: rect.width / 2 - 180, y: rect.height / 2 + 120 },
+      designer: { x: rect.width / 2 + 180, y: rect.height / 2 + 120 },
+      "data-ml": { x: rect.width / 2 - 300, y: rect.height / 2 },
+      "code-reviewer": { x: rect.width / 2 + 300, y: rect.height / 2 },
+      "it-sysadmin": { x: rect.width / 2, y: rect.height / 2 - 240 },
+    };
+
+    const agentNames = [
+      "orchestrator",
+      "builder",
+      "researcher",
+      "devops",
+      "designer",
+      "data-ml",
+      "code-reviewer",
+      "it-sysadmin",
     ];
 
-    // Task nodes
+    const agents = agentNames.map((name) => {
+      const wsMetrics = agentMetrics[name];
+      const pos = defaultPositions[name] || { x: rect.width / 2, y: rect.height / 2 };
+      const status = wsMetrics?.status || "idle";
+      const label = name.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+      return {
+        id: name,
+        x: pos.x,
+        y: pos.y,
+        r: name === "orchestrator" ? 35 : 25,
+        type: name === "orchestrator" ? "orchestrator" : "agent",
+        label,
+        status: status === "active" ? "active" : "idle",
+        tokensPerSec: wsMetrics?.tokens_per_sec || 0,
+        memoryMb: wsMetrics?.memory_mb || 0,
+        cpuPercent: wsMetrics?.cpu_percent || 0,
+      };
+    });
+
+    // Task nodes (from kanban data if available, else defaults)
     const tasks = [
       { x: rect.width / 2 - 300, y: rect.height / 2 - 200, r: 12, label: "Auth Research" },
       { x: rect.width / 2 + 300, y: rect.height / 2 - 200, r: 12, label: "Deploy Config" },
@@ -330,8 +361,9 @@ function OverviewTab() {
 
       // Draw agent nodes
       agents.forEach((agent) => {
-        // Membrane (breathing)
-        const breath = Math.sin(time * 0.001) * 3;
+        // Membrane (breathing) — pulse rate driven by token velocity
+        const pulsePeriod = agent.tokensPerSec > 0 ? Math.max(200, 3000 - agent.tokensPerSec * 10) : 1000;
+        const breath = Math.sin(time * (1000 / pulsePeriod) * 0.001) * 3;
         ctx.beginPath();
         ctx.arc(agent.x, agent.y, agent.r + 12 + breath, 0, Math.PI * 2);
         ctx.fillStyle = agent.status === "active" ? "rgba(0, 180, 216, 0.08)" : "rgba(113, 113, 138, 0.08)";
@@ -340,7 +372,7 @@ function OverviewTab() {
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // Core
+        // Core — color intensity from CPU usage
         ctx.beginPath();
         ctx.arc(agent.x, agent.y, agent.r, 0, Math.PI * 2);
         const gradient = ctx.createRadialGradient(agent.x - 5, agent.y - 5, 0, agent.x, agent.y, agent.r);
@@ -348,7 +380,11 @@ function OverviewTab() {
           gradient.addColorStop(0, "#00b4d8");
           gradient.addColorStop(1, "#0096c7");
         } else {
-          gradient.addColorStop(0, agent.status === "active" ? "#00b4d8" : "#71717a");
+          const intensity = Math.min(1, (agent.cpuPercent / 100) + 0.5);
+          const r = agent.status === "active" ? Math.floor(intensity * 255) : 113;
+          const g = agent.status === "active" ? Math.floor(intensity * 216) : 113;
+          const b = agent.status === "active" ? Math.floor(intensity * 255) : 138;
+          gradient.addColorStop(0, `rgb(${r}, ${g}, ${b})`);
           gradient.addColorStop(1, agent.status === "active" ? "#0096c7" : "#52525b");
         }
         ctx.fillStyle = gradient;
@@ -371,6 +407,13 @@ function OverviewTab() {
         ctx.fillStyle = "#e4e4e7";
         ctx.textAlign = "center";
         ctx.fillText(agent.label, agent.x, agent.y + agent.r + 20);
+
+        // Token velocity indicator (for active agents)
+        if (agent.tokensPerSec > 0) {
+          ctx.font = "9px Inter, sans-serif";
+          ctx.fillStyle = "#00b4d8";
+          ctx.fillText(`${agent.tokensPerSec.toFixed(1)} t/s`, agent.x, agent.y + agent.r + 32);
+        }
       });
 
       // Clean up old particles
@@ -394,7 +437,7 @@ function OverviewTab() {
     return () => {
       if (animationId) cancelAnimationFrame(animationId);
     };
-  }, [animationId]);
+  }, [animationId, agentMetrics]);
 
   return (
     <div className="h-full w-full flex flex-col">
