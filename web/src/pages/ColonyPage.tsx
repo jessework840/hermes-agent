@@ -18,6 +18,9 @@ export default function ColonyPage() {
   const [colonyStatus, setColonyStatus] = useState<"running" | "stopped" | "starting" | "error">("stopped");
   const [agentMetrics, setAgentMetrics] = useState<Record<string, any>>({});
   const [systemMetrics, setSystemMetrics] = useState({ memory: 0, cpu: 0 });
+  const [kanbanColumns, setKanbanColumns] = useState<Record<string, any[]>>({});
+  const [governanceEvents, setGovernanceEvents] = useState<any[]>([]);
+  const [toolStream, setToolStream] = useState<any[]>([]);
   const [metrics] = useState({
     totalAgents: 0,
     activeTasks: 0,
@@ -46,6 +49,15 @@ export default function ColonyPage() {
               setSystemMetrics(data.system || { memory_usage: 0, cpu_usage: 0 });
               if (data.colony_status) {
                 setColonyStatus(data.colony_status);
+              }
+              if (data.kanban) {
+                setKanbanColumns(data.kanban);
+              }
+              if (data.governance) {
+                setGovernanceEvents(data.governance);
+              }
+              if (data.tool_stream) {
+                setToolStream(data.tool_stream);
               }
             }
           } catch (e) {
@@ -154,8 +166,8 @@ export default function ColonyPage() {
 
       {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-hidden p-4">
-        {activeTab === "overview" && <OverviewTab agentMetrics={agentMetrics} />}
-        {activeTab === "kanban" && <KanbanTab />}
+        {activeTab === "overview" && <OverviewTab agentMetrics={agentMetrics} toolStream={toolStream} />}
+        {activeTab === "kanban" && <KanbanTab kanbanColumns={kanbanColumns} />}
         {activeTab === "slots" && <SlotsTab setSelectedSlot={setSelectedSlot} />}
         {activeTab === "replays" && <ReplaysTab />}
         {activeTab === "skills" && <SkillsTab />}
@@ -193,7 +205,7 @@ function MetricCard({ label, value, icon: Icon, trend }: { label: string; value:
 }
 
 // Overview Tab - Mission Control Canvas (WebSocket-driven)
-function OverviewTab({ agentMetrics }: { agentMetrics: Record<string, any> }) {
+function OverviewTab({ agentMetrics, toolStream }: { agentMetrics: Record<string, any>; toolStream: any[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [animationId, setAnimationId] = useState<number | null>(null);
 
@@ -455,23 +467,36 @@ function OverviewTab({ agentMetrics }: { agentMetrics: Record<string, any> }) {
         </div>
       </div>
 
-      {/* Live tool stream panel */}
-      <div className="mt-4 h-48 rounded-xl bg-base bg-elevated/50 border border-current/10 overflow-hidden">
-        <div className="p-3 border-b border-current/10 flex items-center justify-between">
-          <h3 className="font-medium text-midground flex items-center gap-2">
-            <Terminal className="size-4" />
-            Live Tool Stream
-          </h3>
-          <span className="text-xs text-text-secondary">Last 50 calls</span>
-        </div>
-        <div className="p-3 h-[calc(100%-44px)] overflow-y-auto font-mono text-xs text-text-secondary space-y-1">
-          <ToolStreamItem agent="orchestrator" tool="delegate_task" args="{goal: 'Build auth', slot: 'builder'}" duration="245ms" cost="$0.002" />
-          <ToolStreamItem agent="builder" tool="write_file" args="{path: 'auth.tsx'}" duration="12ms" cost="$0.0001" />
-          <ToolStreamItem agent="researcher" tool="web_search" args="{query: 'Supabase auth patterns'}" duration="890ms" cost="$0.001" />
-          <ToolStreamItem agent="builder" tool="terminal" args="{cmd: 'npm test'}" duration="3.2s" cost="$0.005" />
-          <ToolStreamItem agent="devops" tool="cloudflare_deploy" args="{project: 'auth-dashboard'}" duration="45s" cost="$0.02" />
-        </div>
-      </div>
+      // Live tool stream panel
+            <div className="mt-4 h-48 rounded-xl bg-base bg-elevated/50 border border-current/10 overflow-hidden">
+              <div className="p-3 border-b border-current/10 flex items-center justify-between">
+                <h3 className="font-medium text-midground flex items-center gap-2">
+                  <Terminal className="size-4" />
+                  Live Tool Stream
+                </h3>
+                <span className="text-xs text-text-secondary">Last 50 calls</span>
+              </div>
+              <div className="p-3 h-[calc(100%-44px)] overflow-y-auto font-mono text-xs text-text-secondary space-y-1">
+                {toolStream.length > 0 ? toolStream.slice(-50).map((call, i) => (
+                  <ToolStreamItem
+                    key={i}
+                    agent={call.agent}
+                    tool={call.tool}
+                    args={JSON.stringify(call.args || {})}
+                    duration={call.duration || "?"}
+                    cost={call.cost ? `$${call.cost}` : "$?"}
+                  />
+                )) : (
+                  <>
+                    <ToolStreamItem agent="orchestrator" tool="delegate_task" args="{goal: 'Build auth', slot: 'builder'}" duration="245ms" cost="$0.002" />
+                    <ToolStreamItem agent="builder" tool="write_file" args="{path: 'auth.tsx'}" duration="12ms" cost="$0.0001" />
+                    <ToolStreamItem agent="researcher" tool="web_search" args="{query: 'Supabase auth patterns'}" duration="890ms" cost="$0.001" />
+                    <ToolStreamItem agent="builder" tool="terminal" args="{cmd: 'npm test'}" duration="3.2s" cost="$0.005" />
+                    <ToolStreamItem agent="devops" tool="cloudflare_deploy" args="{project: 'auth-dashboard'}" duration="45s" cost="$0.02" />
+                  </>
+                )}
+              </div>
+            </div>
     </div>
   );
 }
@@ -504,8 +529,8 @@ function ToolStreamItem({ agent, tool, args, duration, cost }: { agent: string; 
   );
 }
 
-// Kanban Tab
-function KanbanTab() {
+// Kanban Tab - WebSocket-driven
+function KanbanTab({ kanbanColumns }: { kanbanColumns: Record<string, any[]> }) {
   const columns = [
     { id: "backlog", label: "Backlog", color: "#71717a" },
     { id: "ready", label: "Ready", color: "#3b82f6" },
@@ -514,15 +539,9 @@ function KanbanTab() {
     { id: "done", label: "Done", color: "#00b4d8" },
   ];
 
-  const tasks = [
-    { id: "1", title: "Research Supabase auth", column: "ready", assignee: "researcher", priority: "high" },
-    { id: "2", title: "Implement login form", column: "in_progress", assignee: "builder", priority: "high" },
-    { id: "3", title: "Configure Cloudflare deploy", column: "in_progress", assignee: "devops", priority: "medium" },
-    { id: "4", title: "Write integration tests", column: "backlog", assignee: "builder", priority: "medium" },
-    { id: "5", title: "Code review auth flow", column: "review", assignee: "code-reviewer", priority: "high" },
-    { id: "6", title: "Deploy to staging", column: "done", assignee: "devops", priority: "low" },
-  ];
-
+  // Use live kanban data from WebSocket, fallback to mock if empty
+  const hasLiveData = Object.keys(kanbanColumns).length > 0 && Object.values(kanbanColumns).some(v => v.length > 0);
+  
   return (
     <div className="h-full flex gap-4 overflow-x-auto pb-4 px-2">
       {columns.map((col) => (
@@ -530,13 +549,19 @@ function KanbanTab() {
           <div className="flex items-center justify-between p-3 rounded-t-xl" style={{ background: `${col.color}20` }}>
             <h3 className="font-semibold text-sm" style={{ color: col.color }}>{col.label}</h3>
             <span className="text-xs px-2 py-0.5 rounded-full bg-current/10 text-text-secondary">
-              {tasks.filter((t) => t.column === col.id).length}
+              {hasLiveData 
+                ? kanbanColumns[col.id]?.length || 0 
+                : tasks.filter((t) => t.column === col.id).length}
             </span>
           </div>
           <div className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto" style={{ background: `linear-gradient(180deg, ${col.color}08 0%, transparent 100%)` }}>
-            {tasks.filter((t) => t.column === col.id).map((task) => (
-              <KanbanCard key={task.id} task={task} />
-            ))}
+            {hasLiveData 
+              ? (kanbanColumns[col.id] || []).map((task) => (
+                  <KanbanCard key={task.id} task={task} />
+                ))
+              : tasks.filter((t) => t.column === col.id).map((task) => (
+                  <KanbanCard key={task.id} task={task} />
+                ))}
             <div className="mt-auto pt-2 border-t border-current/10">
               <button className="w-full py-2 text-sm text-text-secondary hover:text-midground flex items-center justify-center gap-1">
                 <Plus className="size-4" />
@@ -549,6 +574,15 @@ function KanbanTab() {
     </div>
   );
 }
+
+const tasks = [
+  { id: "1", title: "Research Supabase auth", column: "ready", assignee: "researcher", priority: "high" },
+  { id: "2", title: "Implement login form", column: "in_progress", assignee: "builder", priority: "high" },
+  { id: "3", title: "Configure Cloudflare deploy", column: "in_progress", assignee: "devops", priority: "medium" },
+  { id: "4", title: "Write integration tests", column: "backlog", assignee: "builder", priority: "medium" },
+  { id: "5", title: "Code review auth flow", column: "review", assignee: "code-reviewer", priority: "high" },
+  { id: "6", title: "Deploy to staging", column: "done", assignee: "devops", priority: "low" },
+];
 
 function KanbanCard({ task }: { task: any }) {
   const priorityColors = { low: "#71717a", medium: "#3b82f6", high: "#f59e0b", critical: "#ef4444" };
