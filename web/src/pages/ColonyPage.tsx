@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PluginSlot } from "@/plugins";
-import { Users, Zap, GitBranch, Activity, Settings, RotateCw, Download, Eye, Edit, Network, Terminal, Layers, Globe, BookOpen, Shield, Plus, FileText, Package, X, TrendingUp, History, Code, Waves, Cpu, HardDrive, BarChart3 } from "lucide-react";
+import { Users, Zap, GitBranch, Activity, Settings, RotateCw, Download, Eye, Edit, Network, Terminal, Layers, Globe, BookOpen, Shield, Plus, FileText, Package, X, TrendingUp, History, Code, Waves, Cpu, HardDrive, BarChart3, Palette, Key, Clock, SlidersHorizontal, Server, Palette as PaletteIcon } from "lucide-react";
 
 // DollarSign icon (not in lucide, create inline)
 function DollarSign({ className }: { className?: string }) {
@@ -754,23 +754,62 @@ function ReplayCard({ replay }: { replay: any }) {
 function SkillsTab() {
   const [filter, setFilter] = useState("");
   const [category, setCategory] = useState("all");
+  const [skills, setSkills] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const skills = [
-    { name: "github", category: "development", description: "GitHub via gh CLI: PRs, issues, reviews", installed: true },
-    { name: "test-driven-development", category: "development", description: "TDD: enforce RED-GREEN-REFACTOR", installed: true },
-    { name: "requesting-code-review", category: "development", description: "Pre-commit review: security scan, quality gates", installed: true },
-    { name: "web-search", category: "research", description: "Search the web for information", installed: true },
-    { name: "arxiv", category: "research", description: "Search arXiv papers", installed: true },
-    { name: "competitor-news-monitor", category: "research", description: "Watch companies for material news", installed: false },
-    { name: "architecture-diagram", category: "creative", description: "Dark-themed SVG architecture diagrams", installed: true },
-    { name: "excalidraw", category: "creative", description: "Hand-drawn Excalidraw diagrams", installed: false },
-    { name: "docker-management", category: "devops", description: "Docker containers, compose, swarm", installed: true },
-    { name: "cloudflare-temporary-deploy", category: "devops", description: "Cloudflare Pages temporary deploys", installed: true },
-    { name: "systematic-debugging", category: "development", description: "4-phase root cause debugging", installed: true },
-    { name: "spec-driven-incremental-implementation", category: "development", description: "Build from spec one verified step", installed: true },
-  ];
+  // Fetch skills from hub API on mount
+  useEffect(() => {
+    const fetchSkills = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/skills/hub/official");
+        if (!response.ok) throw new Error("Failed to fetch skills");
+        const data = await response.json();
+        // Transform to expected format
+        const transformed = data.skills.map((s: any) => ({
+          name: s.name,
+          category: s.category || "general",
+          description: s.description,
+          installed: s.installed || false,
+          identifier: s.identifier,
+          trust_level: s.trust_level,
+        }));
+        setSkills(transformed);
+      } catch (e) {
+        setError("Failed to load skills from hub");
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSkills();
+  }, []);
 
-  const categories = ["all", "development", "research", "creative", "devops", "productivity", "mlops"];
+  // Filter skills
+  const filteredSkills = skills.filter(
+    (s) => (category === "all" || s.category === category) &&
+      s.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  // Get unique categories
+  const categories = ["all", ...new Set(skills.map(s => s.category).filter(Boolean))];
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-midground border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center text-destructive">
+        {error}
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -794,17 +833,17 @@ function SkillsTab() {
       </div>
 
       <div className="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {skills
-          .filter((s) => (category === "all" || s.category === category) && s.name.toLowerCase().includes(filter.toLowerCase()))
-          .map((skill) => (
-            <SkillCard key={skill.name} skill={skill} />
-          ))}
+        {filteredSkills.map((skill) => (
+          <SkillCard key={skill.identifier || skill.name} skill={skill} />
+        ))}
       </div>
     </div>
   );
 }
 
 function SkillCard({ skill }: { skill: any }) {
+  const [showSlotPicker, setShowSlotPicker] = useState(false);
+
   return (
     <div className="p-4 rounded-xl bg-base bg-elevated/50 border border-current/10 hover:border-current/20 transition-colors">
       <div className="flex items-start justify-between mb-2">
@@ -818,12 +857,100 @@ function SkillCard({ skill }: { skill: any }) {
         <span className="text-xs text-text-secondary uppercase tracking-wide">{skill.category}</span>
         <button
           className={cn("px-3 py-1 text-xs font-medium rounded-lg transition-colors", skill.installed ? "bg-current/10 text-text-secondary hover:bg-current/20" : "bg-midground/10 text-midground hover:bg-midground/20")}
+          onClick={() => skill.installed ? console.log("Remove skill") : setShowSlotPicker(true)}
         >
           {skill.installed ? "Remove" : "Add to Slot"}
         </button>
       </div>
+
+      {/* Slot picker modal for "Add to Slot" */}
+      {showSlotPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-base rounded-xl border border-current/10 p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
+            <h3 className="font-medium text-text-primary mb-4">Add "{skill.name}" to Slot</h3>
+            <p className="text-sm text-text-secondary mb-4">Select a slot to add this skill to:</p>
+            <SlotPickerList skill={skill} onClose={() => setShowSlotPicker(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function SlotPickerList({ skill, onClose }: { skill: any; onClose: () => void }) {
+  // Fetch available slots from the workspace
+  const [slots, setSlots] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSlots = async () => {
+      try {
+        const response = await fetch("/api/slots/list");
+        if (response.ok) {
+          const data = await response.json();
+          setSlots(data.slots || []);
+        }
+      } catch (e) {
+        console.error("Failed to fetch slots", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSlots();
+  }, []);
+
+  if (loading) {
+    return <div className="text-center py-4">Loading slots...</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {slots.length === 0 ? (
+        <div className="text-center py-4 text-text-secondary">
+          No slots found. Run <code>hermes corvus init</code> first.
+        </div>
+      ) : (
+        slots.map((slot: any) => (
+          <button
+            key={slot.name}
+            onClick={() => addSkillToSlot(skill.identifier, slot.name, onClose)}
+            className="w-full text-left p-3 rounded-lg bg-current/5 border border-current/10 hover:bg-current/10 transition-colors flex items-center justify-between"
+          >
+            <div>
+              <p className="font-medium text-text-primary capitalize">{slot.name}</p>
+              <p className="text-xs text-text-secondary">{slot.role}</p>
+            </div>
+            <Plus className="size-4 text-midground" />
+          </button>
+        ))
+      )}
+      <button
+        onClick={onClose}
+        className="w-full mt-2 px-3 py-2 text-xs font-medium rounded-lg bg-current/10 text-text-secondary hover:bg-current/20 transition-colors"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+async function addSkillToSlot(identifier: string, slotName: string, onClose: () => void) {
+  try {
+    const response = await fetch("/api/skills/hub/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, slot: slotName }),
+    });
+    if (response.ok) {
+      onClose();
+      // Refresh skills list
+      window.dispatchEvent(new Event("skills-updated"));
+    } else {
+      console.error("Failed to add skill to slot");
+    }
+  } catch (e) {
+    console.error("Error adding skill to slot", e);
+  }
 }
 
 // Resources Tab
@@ -1252,47 +1379,96 @@ function AgentWebTab() {
   );
 }
 function ColonySettingsTab() {
+  const [activeSection, setActiveSection] = useState<"theme" | "model-routing" | "keys" | "cron" | "skin-tokens" | "colony" | "governance">("theme");
+  const [config, setConfig] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{type: "success" | "error", text: string} | null>(null);
+
+  // Fetch config on mount
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await fetch("/api/settings");
+        if (response.ok) {
+          const data = await response.json();
+          setConfig(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch settings", e);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  const sections = [
+    { id: "theme", label: "Theme", icon: Palette },
+    { id: "model-routing", label: "Model Routing", icon: Network },
+    { id: "keys", label: "API Keys", icon: Key },
+    { id: "cron", label: "Cron Jobs", icon: Clock },
+    { id: "skin-tokens", label: "Skin Tokens", icon: SlidersHorizontal },
+    { id: "colony", label: "Colony", icon: Server },
+    { id: "governance", label: "Governance", icon: Shield },
+  ];
+
+  const saveConfig = async (section: string, data: any) => {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/settings/${section}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (response.ok) {
+        setConfig(prev => ({ ...prev, [section]: data }));
+        setMessage({ type: "success", text: `${section} saved` });
+      } else {
+        setMessage({ type: "error", text: `Failed to save ${section}` });
+      }
+    } catch (e) {
+      setMessage({ type: "error", text: `Error: ${e}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="h-full overflow-y-auto space-y-6 p-2">
-      <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6">
-        <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
-          <Settings className="size-5" />
-          Colony Configuration
-        </h3>
-        <div className="space-y-4">
-          <SettingRow label="Workspace Path" value="~/aos-workspace" description="Shared workspace for all agents" />
-          <SettingRow label="Max Concurrent Agents" value="8" description="Global concurrency limit" />
-          <SettingRow label="Queue Policy" value="wait" description="wait | reject | queue" />
-          <SettingRow label="Health Check Interval" value="30s" description="Daemon health monitoring" />
-          <SettingRow label="Event Retention" value="30 days" description="How long to keep event logs" />
-        </div>
-      </section>
+    <div className="h-full flex flex-col">
+      {/* Section Navigation */}
+      <div className="flex flex-wrap gap-1 px-4 pb-2 border-b border-current/10">
+        {sections.map((section) => (
+          <button
+            key={section.id}
+            onClick={() => setActiveSection(section.id as any)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              "border border-transparent",
+              activeSection === section.id
+                ? "bg-midground/20 text-midground border-midground/30 shadow-[0_0_0_1px_var(--midground)]"
+                : "text-text-secondary hover:text-midground hover:bg-current/5"
+            )}
+          >
+            <section.icon className="size-4" />
+            {section.label}
+          </button>
+        ))}
+      </div>
 
-      <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6">
-        <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
-          <Shield className="size-5" />
-          Governance
-        </h3>
-        <div className="space-y-4">
-          <SettingRow label="Enabled" value="Yes" description="SecurityBus → PolicyEngine → CapabilityRegistry" />
-          <SettingRow label="Policy Engine" value="Rule-based" description="rule-based | llm-based" />
-          <SettingRow label="Default Deny" value="Yes" description="Fail-closed by default" />
-          <SettingRow label="Approval Required For" value="shell_exec:sudo, deploy:*, git:push:production" description="High-risk operations" />
-        </div>
-      </section>
+      {/* Content */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        {message && (
+          <div className={`mb-4 p-3 rounded-lg ${message.type === "success" ? "bg-success/20 text-success" : "bg-destructive/20 text-destructive"}`}>
+            {message.text}
+          </div>
+        )}
 
-      <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6">
-        <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
-          <Network className="size-5" />
-          Model Routing
-        </h3>
-        <div className="space-y-4">
-          <SettingRow label="Default Provider" value="NVIDIA NIM" description="Primary: nemotron-3-ultra-550b-a55b" />
-          <SettingRow label="Fallback Chain" value="NIM → NIM Backup → OpenRouter → Groq → Gemini → Codex" description="Auto on 429/5xx" />
-          <SettingRow label="Cost Aware" value="Yes" description="Track per-slot token costs" />
-          <SettingRow label="Prefer Local" value="Yes" description="Ollama/llama.cpp when available" />
-        </div>
-      </section>
+        {activeSection === "theme" && <ThemeSettings config={config.theme} onSave={(d) => saveConfig("theme", d)} saving={saving} />}
+        {activeSection === "model-routing" && <ModelRoutingSettings config={config.model_routing} onSave={(d) => saveConfig("model-routing", d)} saving={saving} />}
+        {activeSection === "keys" && <KeyManagerSettings config={config.keys} onSave={(d) => saveConfig("keys", d)} saving={saving} />}
+        {activeSection === "cron" && <CronSettings config={config.cron} onSave={(d) => saveConfig("cron", d)} saving={saving} />}
+        {activeSection === "skin-tokens" && <SkinTokensSettings config={config.skin_tokens} onSave={(d) => saveConfig("skin-tokens", d)} saving={saving} />}
+        {activeSection === "colony" && <ColonySettings config={config.colony} onSave={(d) => saveConfig("colony", d)} saving={saving} />}
+        {activeSection === "governance" && <GovernanceSettings config={config.governance} onSave={(d) => saveConfig("governance", d)} saving={saving} />}
+      </div>
     </div>
   );
 }
@@ -1311,6 +1487,551 @@ function SettingRow({ label, value, description }: { label: string; value: strin
         </button>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Settings Sub-Components
+// ============================================================
+
+function ThemeSettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [theme, setTheme] = useState(config?.skin || "mission-control");
+  const skins = [
+    { id: "mission-control", label: "Mission Control", desc: "Dense, canvas-focused, full physics" },
+    { id: "glance", label: "Glance", desc: "Ambient, compact, minimal UI" },
+    { id: "debug", label: "Debug", desc: "Raw events, governance trace, time-travel" },
+  ];
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <PaletteIcon className="size-5" />
+        Theme Selector
+      </h3>
+      <p className="text-text-secondary">Choose your visual density and physics mode. Instant swap, no reload.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {skins.map((skin) => (
+          <button
+            key={skin.id}
+            onClick={() => setTheme(skin.id)}
+            className={cn(
+              "p-4 rounded-xl border-2 text-left transition-all",
+              theme === skin.id
+                ? "border-midground bg-midground/10 shadow-[0_0_0_2px_var(--midground)]"
+                : "border-current/10 hover:border-midground/30"
+            )}
+          >
+            <p className="font-medium text-text-primary">{skin.label}</p>
+            <p className="text-xs text-text-secondary mt-1">{skin.desc}</p>
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => onSave({ skin: theme })}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Theme"}
+      </button>
+    </section>
+  );
+}
+
+function ModelRoutingSettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [primary, setPrimary] = useState(config?.primary || "nvidia/nemotron-3-ultra-550b-a55b");
+  const [fallback, setFallback] = useState(config?.fallback || ["nim-backup", "openrouter", "groq", "gemini", "codex"]);
+  const [preferLocal, setPreferLocal] = useState(config?.prefer_local ?? true);
+  const [costTracking, setCostTracking] = useState(config?.cost_tracking ?? true);
+  const newProvider = useState("");
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <Network className="size-5" />
+        Model Routing
+      </h3>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Primary Model</label>
+          <select
+            value={primary}
+            onChange={(e) => setPrimary(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          >
+            <option value="nvidia/nemotron-3-ultra-550b-a55b">NVIDIA NIM — Nemotron 3 Ultra</option>
+            <option value="openrouter/auto">OpenRouter — Auto</option>
+            <option value="groq/llama-3.3-70b-versatile">Groq — Llama 3.3 70B</option>
+            <option value="google/gemini-2.0-flash">Google — Gemini 2.0 Flash</option>
+            <option value="ollama/llama3.1">Ollama — Llama 3.1 (local)</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Fallback Chain (comma-separated)</label>
+          <input
+            type="text"
+            value={fallback.join(", ")}
+            onChange={(e) => setFallback(e.target.value.split(",").map(s => s.trim()).filter(Boolean))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+            placeholder="nim-backup, openrouter, groq, gemini, codex"
+          />
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={preferLocal}
+              onChange={(e) => setPreferLocal(e.target.checked)}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Prefer local models (Ollama/llama.cpp)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={costTracking}
+              onChange={(e) => setCostTracking(e.target.checked)}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Cost tracking per slot</span>
+          </label>
+        </div>
+      </div>
+      <button
+        onClick={() => onSave({ primary, fallback, prefer_local: preferLocal, cost_tracking: costTracking })}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Model Routing"}
+      </button>
+    </section>
+  );
+}
+
+function KeyManagerSettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [keys, setKeys] = useState(config || {
+    nvidia: "",
+    nvidia_backup: "",
+    openrouter: "",
+    groq: "",
+    google: "",
+    anthropic: "",
+    openai: "",
+  });
+  const providers = [
+    { id: "nvidia", label: "NVIDIA NIM", env: "NVIDIA_API_KEY" },
+    { id: "nvidia_backup", label: "NVIDIA NIM Backup", env: "NVIDIA_API_KEY_BACKUP" },
+    { id: "openrouter", label: "OpenRouter", env: "OPENROUTER_API_KEY" },
+    { id: "groq", label: "Groq", env: "GROQ_API_KEY" },
+    { id: "google", label: "Google (Gemini)", env: "GOOGLE_API_KEY" },
+    { id: "anthropic", label: "Anthropic (Claude)", env: "ANTHROPIC_API_KEY" },
+    { id: "openai", label: "OpenAI", env: "OPENAI_API_KEY" },
+  ];
+  const handleChange = (id: string, value: string) => setKeys(prev => ({ ...prev, [id]: value }));
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <Key className="size-5" />
+        API Keys
+      </h3>
+      <p className="text-text-secondary">Keys are stored in ~/.hermes/.env. Values are masked.</p>
+      <div className="space-y-3">
+        {providers.map((p) => (
+          <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-current/5">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-text-primary">{p.label}</p>
+              <p className="text-xs text-text-secondary">{p.env}</p>
+            </div>
+            <input
+              type="password"
+              value={keys[p.id] || ""}
+              onChange={(e) => handleChange(p.id, e.target.value)}
+              placeholder={keys[p.id] ? "••••••••" : "Enter key..."}
+              className="w-64 px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary placeholder-text-secondary focus:border-midground focus:outline-none font-mono text-sm"
+            />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => onSave(keys)}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Keys"}
+      </button>
+    </section>
+  );
+}
+
+function CronSettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [jobs, setJobs] = useState(config || [
+    { id: "corvus-hourly-worker", schedule: "0 * * * *", enabled: true, continuity: true },
+  ]);
+  const [newJob, setNewJob] = useState({ id: "", schedule: "", enabled: true, continuity: false });
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <Clock className="size-5" />
+        Cron Jobs
+      </h3>
+      <p className="text-text-secondary">Background workers with continuity mode. Runs in isolated sessions.</p>
+      <div className="space-y-3">
+        {jobs.map((job, i) => (
+          <div key={job.id} className="flex items-center gap-3 p-3 rounded-lg bg-current/5">
+            <div className="flex-1 min-w-0">
+              <p className="font-mono text-sm text-text-primary">{job.id}</p>
+              <p className="text-xs text-text-secondary">{job.schedule}</p>
+            </div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={job.enabled}
+                onChange={(e) => setJobs(prev => prev.map((j, idx) => idx === i ? { ...j, enabled: e.target.checked } : j))}
+                className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+              />
+              <span className="text-xs text-text-secondary">Enabled</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={job.continuity}
+                onChange={(e) => setJobs(prev => prev.map((j, idx) => idx === i ? { ...j, continuity: e.target.checked } : j))}
+                className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+              />
+              <span className="text-xs text-text-secondary">Continuity</span>
+            </label>
+            <button
+              onClick={() => setJobs(prev => prev.filter((_, idx) => idx !== i))}
+              className="p-1.5 rounded text-text-secondary hover:text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-current/5">
+        <input
+          type="text"
+          value={newJob.id}
+          onChange={(e) => setNewJob(prev => ({ ...prev, id: e.target.value }))}
+          placeholder="Job ID (e.g., my-worker)"
+          className="px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none min-w-[150px]"
+        />
+        <input
+          type="text"
+          value={newJob.schedule}
+          onChange={(e) => setNewJob(prev => ({ ...prev, schedule: e.target.value }))}
+          placeholder="Cron (e.g., 0 * * * *)"
+          className="px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none min-w-[120px]"
+        />
+        <button
+          onClick={() => {
+            if (newJob.id && newJob.schedule) {
+              setJobs(prev => [...prev, { ...newJob, enabled: true, continuity: false }]);
+              setNewJob({ id: "", schedule: "", enabled: true, continuity: false });
+            }
+          }}
+          className="px-3 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors"
+        >
+          Add Job
+        </button>
+      </div>
+      <button
+        onClick={() => onSave(jobs)}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Cron Jobs"}
+      </button>
+    </section>
+  );
+}
+
+function SkinTokensSettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [tokens, setTokens] = useState(config || {
+    particleDensity: 1.0,
+    traceOpacity: 0.8,
+    showLabels: true,
+    showMetrics: true,
+    showGovernance: false,
+    cardDensity: "comfortable",
+    showPhysics: true,
+    sidebarWidth: 320,
+    headerHeight: 56,
+    ambient: false,
+  });
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <SlidersHorizontal className="size-5" />
+        Skin Tokens
+      </h3>
+      <p className="text-text-secondary">CSS token runtime — swap entire layout/density/motion instantly. Export .corvusskin files.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Particle Density</label>
+          <input
+            type="range"
+            min="0" max="1" step="0.1"
+            value={tokens.particleDensity}
+            onChange={(e) => setTokens(prev => ({ ...prev, particleDensity: parseFloat(e.target.value) }))}
+            className="w-full"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Trace Opacity</label>
+          <input
+            type="range"
+            min="0" max="1" step="0.1"
+            value={tokens.traceOpacity}
+            onChange={(e) => setTokens(prev => ({ ...prev, traceOpacity: parseFloat(e.target.value) }))}
+            className="w-full"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Sidebar Width</label>
+          <input
+            type="number"
+            value={tokens.sidebarWidth}
+            onChange={(e) => setTokens(prev => ({ ...prev, sidebarWidth: parseInt(e.target.value) }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Header Height</label>
+          <input
+            type="number"
+            value={tokens.headerHeight}
+            onChange={(e) => setTokens(prev => ({ ...prev, headerHeight: parseInt(e.target.value) }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          />
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tokens.showLabels}
+              onChange={(e) => setTokens(prev => ({ ...prev, showLabels: e.target.checked }))}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Show Labels</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tokens.showMetrics}
+              onChange={(e) => setTokens(prev => ({ ...prev, showMetrics: e.target.checked }))}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Show Metrics</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tokens.showPhysics}
+              onChange={(e) => setTokens(prev => ({ ...prev, showPhysics: e.target.checked }))}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Show Physics</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tokens.ambient}
+              onChange={(e) => setTokens(prev => ({ ...prev, ambient: e.target.checked }))}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Ambient Mode</span>
+          </label>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => {
+            const blob = new Blob([JSON.stringify(tokens, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `skin-${Date.now()}.corvusskin`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="px-3 py-2 rounded-lg bg-current/10 text-text-secondary hover:bg-current/20 transition-colors text-sm"
+        >
+          Export .corvusskin
+        </button>
+        <label className="px-3 py-2 rounded-lg bg-current/10 text-text-secondary hover:bg-current/20 transition-colors text-sm cursor-pointer flex items-center gap-2">
+          Import .corvusskin
+          <input
+            type="file"
+            accept=".corvusskin,.json"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                  try {
+                    const parsed = JSON.parse(ev.target?.result as string);
+                    setTokens(parsed);
+                  } catch (err) {
+                    console.error("Invalid skin file", err);
+                  }
+                };
+                reader.readAsText(file);
+              }
+            }}
+            className="sr-only"
+          />
+        </label>
+      </div>
+      <button
+        onClick={() => onSave(tokens)}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Skin Tokens"}
+      </button>
+    </section>
+  );
+}
+
+function ColonySettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [settings, setSettings] = useState(config || {
+    workspace: "~/aos-workspace",
+    max_concurrent: 8,
+    queue_policy: "wait",
+    health_check_interval: "30s",
+    event_retention: "30d",
+  });
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <Server className="size-5" />
+        Colony Configuration
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Workspace Path</label>
+          <input
+            type="text"
+            value={settings.workspace}
+            onChange={(e) => setSettings(prev => ({ ...prev, workspace: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Max Concurrent Agents</label>
+          <input
+            type="number"
+            value={settings.max_concurrent}
+            onChange={(e) => setSettings(prev => ({ ...prev, max_concurrent: parseInt(e.target.value) }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Queue Policy</label>
+          <select
+            value={settings.queue_policy}
+            onChange={(e) => setSettings(prev => ({ ...prev, queue_policy: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          >
+            <option value="wait">wait</option>
+            <option value="reject">reject</option>
+            <option value="queue">queue</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Health Check Interval</label>
+          <input
+            type="text"
+            value={settings.health_check_interval}
+            onChange={(e) => setSettings(prev => ({ ...prev, health_check_interval: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Event Retention</label>
+          <input
+            type="text"
+            value={settings.event_retention}
+            onChange={(e) => setSettings(prev => ({ ...prev, event_retention: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          />
+        </div>
+      </div>
+      <button
+        onClick={() => onSave(settings)}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Colony Config"}
+      </button>
+    </section>
+  );
+}
+
+function GovernanceSettings({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [settings, setSettings] = useState(config || {
+    enabled: true,
+    policy_engine: "rule-based",
+    default_deny: true,
+    approval_required: ["shell_exec:sudo", "deploy:*", "git:push:production"],
+  });
+  const [newRule, setNewRule] = useState("");
+  return (
+    <section className="rounded-xl bg-base bg-elevated/50 border border-current/10 p-6 space-y-4">
+      <h3 className="font-medium text-midground mb-4 flex items-center gap-2">
+        <Shield className="size-5" />
+        Governance
+      </h3>
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.enabled}
+              onChange={(e) => setSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Enable Governance</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.default_deny}
+              onChange={(e) => setSettings(prev => ({ ...prev, default_deny: e.target.checked }))}
+              className="w-4 h-4 rounded border-current/20 text-midground focus:ring-midground"
+            />
+            <span className="text-text-primary">Default Deny (fail-closed)</span>
+          </label>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Policy Engine</label>
+          <select
+            value={settings.policy_engine}
+            onChange={(e) => setSettings(prev => ({ ...prev, policy_engine: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+          >
+            <option value="rule-based">Rule-based</option>
+            <option value="llm-based">LLM-based</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Approval Required For (comma-separated)</label>
+          <input
+            type="text"
+            value={settings.approval_required.join(", ")}
+            onChange={(e) => setSettings(prev => ({ ...prev, approval_required: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
+            className="w-full px-3 py-2 rounded-lg bg-base border border-current/10 text-text-primary focus:border-midground focus:outline-none"
+            placeholder="shell_exec:sudo, deploy:*, git:push:production"
+          />
+        </div>
+      </div>
+      <button
+        onClick={() => onSave(settings)}
+        disabled={saving}
+        className="px-4 py-2 rounded-lg bg-midground/10 text-midground hover:bg-midground/20 transition-colors disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Governance"}
+      </button>
+    </section>
   );
 }
 
